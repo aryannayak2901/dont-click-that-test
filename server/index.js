@@ -19,7 +19,6 @@ app.use(express.json())
 // Game state management
 const games = new Map()
 const waitingPlayers = []
-const testWaitingPlayers = []
 const playerSockets = new Map()
 
 // Bot configuration
@@ -125,10 +124,23 @@ function getBotMove(game) {
   
   if (availableTiles.length === 0) return null
   
-  // Simple AI strategy: prefer tiles with lower risk
-  // For now, just pick a random tile with some delay for realism
-  const randomIndex = Math.floor(Math.random() * availableTiles.length)
-  return availableTiles[randomIndex]
+  // Simple AI strategy: prefer corner and edge tiles first (safer statistically)
+  const cornerTiles = availableTiles.filter(tile => 
+    (tile.x === 0 || tile.x === 9) && (tile.y === 0 || tile.y === 9)
+  )
+  
+  const edgeTiles = availableTiles.filter(tile => 
+    tile.x === 0 || tile.x === 9 || tile.y === 0 || tile.y === 9
+  )
+  
+  if (cornerTiles.length > 0) {
+    return cornerTiles[Math.floor(Math.random() * cornerTiles.length)]
+  } else if (edgeTiles.length > 0) {
+    return edgeTiles[Math.floor(Math.random() * edgeTiles.length)]
+  } else {
+    // Pick random tile
+    return availableTiles[Math.floor(Math.random() * availableTiles.length)]
+  }
 }
 
 // Execute bot move with delay
@@ -138,17 +150,21 @@ function scheduleBotMove(gameId) {
     return
   }
   
+  console.log(`Bot scheduling move for game ${gameId}`)
+  
   // Bot thinks for 1-3 seconds
   const thinkTime = 1000 + Math.random() * 2000
   
   setTimeout(() => {
     const currentGame = games.get(gameId)
     if (!currentGame || currentGame.status !== 'playing' || currentGame.currentTurn !== 'bot-player-ai') {
+      console.log(`Bot move cancelled for game ${gameId} - game state changed`)
       return
     }
     
     const move = getBotMove(currentGame)
     if (move) {
+      console.log(`Bot making move at ${move.x}, ${move.y} in game ${gameId}`)
       const result = revealTile(currentGame, move.x, move.y, 'bot-player-ai')
       
       if (result.valid) {
@@ -250,6 +266,8 @@ io.on('connection', (socket) => {
     playerSockets.set(socket.id, player)
     
     if (isTestMode) {
+      console.log(`Creating test game for player ${player.publicKey}`)
+      
       // In test mode, immediately pair with bot
       const humanPlayer = { ...player, stakeAmount: 0, isTestMode: true }
       const botPlayer = { ...BOT_PLAYER }
@@ -262,7 +280,7 @@ io.on('connection', (socket) => {
       
       console.log(`Test game ${game.id} created with player ${humanPlayer.publicKey} vs Bot`)
       
-      // Notify player
+      // Notify player immediately
       socket.emit('gameJoined', {
         gameId: game.id,
         players: game.players,
@@ -270,17 +288,22 @@ io.on('connection', (socket) => {
         isTestMode: game.isTestMode
       })
       
-      socket.emit('gameStarted', {
-        gameId: game.id,
-        currentTurn: game.currentTurn,
-        grid: game.grid,
-        seed: game.seed
-      })
+      // Start game immediately
+      setTimeout(() => {
+        socket.emit('gameStarted', {
+          gameId: game.id,
+          currentTurn: game.currentTurn,
+          grid: game.grid,
+          seed: game.seed
+        })
+        
+        // If bot goes first, schedule its move
+        if (game.currentTurn === 'bot-player-ai') {
+          console.log('Bot goes first, scheduling move')
+          scheduleBotMove(game.id)
+        }
+      }, 100)
       
-      // If bot goes first, schedule its move
-      if (game.currentTurn === 'bot-player-ai') {
-        scheduleBotMove(game.id)
-      }
     } else {
       // Real game mode - add to waiting list
       waitingPlayers.push({ ...player, stakeAmount: stakeAmount || 0, isTestMode: false })
@@ -326,9 +349,11 @@ io.on('connection', (socket) => {
     const player = playerSockets.get(socket.id)
     
     if (!game || !player || game.currentTurn !== player.publicKey || game.status !== 'playing') {
+      console.log(`Invalid tile reveal attempt: game=${!!game}, player=${!!player}, turn=${game?.currentTurn}, playerKey=${player?.publicKey}`)
       return
     }
 
+    console.log(`Player ${player.publicKey} revealing tile ${x}, ${y} in game ${gameId}`)
     const result = revealTile(game, x, y, player.publicKey)
     
     if (result.valid) {
@@ -355,6 +380,7 @@ io.on('connection', (socket) => {
       } else {
         // If it's now bot's turn, schedule bot move
         if (game.hasBot && game.currentTurn === 'bot-player-ai') {
+          console.log('Scheduling bot move after player turn')
           scheduleBotMove(gameId)
         }
       }
@@ -389,7 +415,10 @@ io.on('connection', (socket) => {
           '⚡ Nice try!',
           '🔍 Interesting choice',
           '🎮 Let\'s play!',
-          '🚀 Game on!'
+          '🚀 Game on!',
+          '🧠 Processing...',
+          '⭐ Well played!',
+          '🎲 Random is fun!'
         ]
         
         setTimeout(() => {
@@ -411,11 +440,16 @@ io.on('connection', (socket) => {
     const player = playerSockets.get(socket.id)
     
     if (game && player) {
-      socket.to(gameId).emit('avatarReaction', {
-        playerId: player.publicKey,
-        reaction: reaction,
-        timestamp: Date.now()
-      })
+      // In bot games, only emit to the same socket since there's no other human player
+      if (game.hasBot) {
+        // Don't emit to other players since bot doesn't need to see reactions
+      } else {
+        socket.to(gameId).emit('avatarReaction', {
+          playerId: player.publicKey,
+          reaction: reaction,
+          timestamp: Date.now()
+        })
+      }
     }
   })
 
