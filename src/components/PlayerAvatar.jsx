@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useGame } from '../contexts/GameContext'
-import { Crown, Target, TestTube } from 'lucide-react'
+import { Crown, Target, TestTube, Bot } from 'lucide-react'
 
 const AVATAR_REACTIONS = ['😈', '😭', '😏', '😂', '💣', '🎯', '🔥', '💀']
 
@@ -29,8 +29,11 @@ export default function PlayerAvatar({ player, isCurrentPlayer, isActive, stats 
   const truncateAddress = (address) => {
     if (!address) return 'Unknown'
     if (address.startsWith('test-player-')) return 'Test Player'
+    if (address === 'bot-player-ai') return 'AI Bot'
     return `${address.slice(0, 4)}...${address.slice(-4)}`
   }
+
+  const isBot = player?.publicKey === 'bot-player-ai'
 
   return (
     <div className={`relative bg-dark-800/50 backdrop-blur-sm rounded-xl p-3 sm:p-4 border transition-all ${
@@ -46,16 +49,17 @@ export default function PlayerAvatar({ player, isCurrentPlayer, isActive, stats 
       {/* Player Info */}
       <div className="flex items-center space-x-2 sm:space-x-3 mb-2 sm:mb-3">
         <div className={`w-8 h-8 sm:w-12 sm:h-12 rounded-full flex items-center justify-center text-lg sm:text-2xl ${
-          isCurrentPlayer ? 'bg-primary-500/20' : 'bg-gray-600/20'
+          isCurrentPlayer ? 'bg-primary-500/20' : isBot ? 'bg-purple-500/20' : 'bg-gray-600/20'
         }`}>
-          {isCurrentPlayer ? '🎮' : '🤖'}
+          {isCurrentPlayer ? '🎮' : isBot ? '🤖' : '👤'}
         </div>
         <div className="flex-1 min-w-0">
           <div className="flex items-center space-x-1 sm:space-x-2">
             <p className="text-white font-medium text-sm sm:text-base truncate">
-              {isCurrentPlayer ? 'You' : 'Opponent'}
+              {isCurrentPlayer ? 'You' : isBot ? 'AI Bot' : 'Opponent'}
             </p>
             {isActive && <Crown className="h-3 w-3 sm:h-4 sm:w-4 text-yellow-400 flex-shrink-0" />}
+            {isBot && <Bot className="h-3 w-3 sm:h-4 sm:w-4 text-purple-400 flex-shrink-0" />}
             {gameState.isTestMode && (
               <TestTube className="h-3 w-3 sm:h-4 sm:w-4 text-warning-400 flex-shrink-0" />
             )}
@@ -77,8 +81,8 @@ export default function PlayerAvatar({ player, isCurrentPlayer, isActive, stats 
         </div>
       </div>
 
-      {/* Reaction Picker for Current Player */}
-      {isCurrentPlayer && (
+      {/* Reaction Picker for Current Player (not for bot) */}
+      {isCurrentPlayer && !isBot && (
         <div className="relative">
           <button
             onClick={() => setShowReactionPicker(!showReactionPicker)}
@@ -100,6 +104,13 @@ export default function PlayerAvatar({ player, isCurrentPlayer, isActive, stats 
               ))}
             </div>
           )}
+        </div>
+      )}
+
+      {/* Bot Status */}
+      {isBot && (
+        <div className="bg-purple-500/20 text-purple-400 text-xs sm:text-sm py-1 sm:py-2 rounded-lg text-center">
+          {isActive ? '🤖 Thinking...' : '🤖 AI Ready'}
         </div>
       )}
     </div>

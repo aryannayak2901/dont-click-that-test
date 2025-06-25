@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useWallet } from '@solana/wallet-adapter-react'
 import { useGame } from '../contexts/GameContext'
-import { Play, Coins, Users, Zap, TestTube, Gamepad2 } from 'lucide-react'
+import { Play, Coins, Users, Zap, TestTube, Gamepad2, Bot } from 'lucide-react'
 
 export default function Home() {
   const navigate = useNavigate()
@@ -126,16 +126,17 @@ export default function Home() {
           <div className="bg-dark-800/50 backdrop-blur-sm rounded-2xl p-6 sm:p-8 border border-gray-700">
             <div className="text-center mb-6">
               <h2 className="text-xl sm:text-2xl font-bold text-white mb-2">Test Mode</h2>
-              <p className="text-gray-400 text-sm">Practice without staking tokens - perfect for developers!</p>
+              <p className="text-gray-400 text-sm">Practice against AI bot - perfect for developers!</p>
             </div>
             
             <div className="mb-6 p-4 bg-warning-500/10 border border-warning-500/30 rounded-lg">
               <div className="flex items-center space-x-2 mb-2">
-                <TestTube className="h-5 w-5 text-warning-400" />
-                <span className="text-warning-400 font-medium text-sm">Developer Mode</span>
+                <Bot className="h-5 w-5 text-purple-400" />
+                <span className="text-purple-400 font-medium text-sm">AI Bot Opponent</span>
               </div>
               <ul className="text-xs text-gray-300 space-y-1">
                 <li>• No wallet connection required</li>
+                <li>• Play against intelligent AI bot</li>
                 <li>• No token staking</li>
                 <li>• Full game functionality</li>
                 <li>• Perfect for testing & learning</li>
@@ -147,19 +148,19 @@ export default function Home() {
               disabled={isJoining}
               className={`w-full py-3 sm:py-4 px-6 rounded-lg font-semibold text-base sm:text-lg flex items-center justify-center space-x-2 transition-all ${
                 !isJoining
-                  ? 'bg-warning-500 hover:bg-warning-600 text-white hover:scale-105'
+                  ? 'bg-purple-500 hover:bg-purple-600 text-white hover:scale-105'
                   : 'bg-gray-600 text-gray-400 cursor-not-allowed'
               }`}
             >
               {isJoining ? (
                 <>
                   <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white"></div>
-                  <span>Finding Opponent...</span>
+                  <span>Starting Bot Game...</span>
                 </>
               ) : (
                 <>
-                  <TestTube className="h-5 w-5" />
-                  <span>Start Test Game</span>
+                  <Bot className="h-5 w-5" />
+                  <span>Play vs AI Bot</span>
                 </>
               )}
             </button>
@@ -183,6 +184,7 @@ export default function Home() {
               <h4 className="font-medium text-white mb-2">Features:</h4>
               <ul className="space-y-1">
                 <li>• Real-time multiplayer action</li>
+                <li>• AI bot for testing & practice</li>
                 <li>• Animated avatar reactions</li>
                 <li>• In-game chat and emojis</li>
                 <li>• Automatic on-chain payouts</li>

@@ -22,6 +22,14 @@ const waitingPlayers = []
 const testWaitingPlayers = []
 const playerSockets = new Map()
 
+// Bot configuration
+const BOT_PLAYER = {
+  socketId: 'bot-player',
+  publicKey: 'bot-player-ai',
+  stakeAmount: 0,
+  isTestMode: true
+}
+
 // Minesweeper grid generation
 function generateGrid(width = 10, height = 10, mineCount = 15, seed = Date.now()) {
   // Use seed for reproducible randomness
@@ -93,11 +101,101 @@ function createGame(player1, player2, stakeAmount, isTestMode = false) {
       [player2.publicKey]: { safeRevealed: 0 }
     },
     chatMessages: [],
-    startTime: Date.now()
+    startTime: Date.now(),
+    hasBot: player2.publicKey === 'bot-player-ai'
   }
   
   games.set(gameId, game)
   return game
+}
+
+// Bot AI logic
+function getBotMove(game) {
+  const grid = game.grid
+  const availableTiles = []
+  
+  // Find all unrevealed tiles
+  for (let y = 0; y < grid.length; y++) {
+    for (let x = 0; x < grid[y].length; x++) {
+      if (!grid[y][x].revealed) {
+        availableTiles.push({ x, y })
+      }
+    }
+  }
+  
+  if (availableTiles.length === 0) return null
+  
+  // Simple AI strategy: prefer tiles with lower risk
+  // For now, just pick a random tile with some delay for realism
+  const randomIndex = Math.floor(Math.random() * availableTiles.length)
+  return availableTiles[randomIndex]
+}
+
+// Execute bot move with delay
+function scheduleBotMove(gameId) {
+  const game = games.get(gameId)
+  if (!game || game.status !== 'playing' || game.currentTurn !== 'bot-player-ai') {
+    return
+  }
+  
+  // Bot thinks for 1-3 seconds
+  const thinkTime = 1000 + Math.random() * 2000
+  
+  setTimeout(() => {
+    const currentGame = games.get(gameId)
+    if (!currentGame || currentGame.status !== 'playing' || currentGame.currentTurn !== 'bot-player-ai') {
+      return
+    }
+    
+    const move = getBotMove(currentGame)
+    if (move) {
+      const result = revealTile(currentGame, move.x, move.y, 'bot-player-ai')
+      
+      if (result.valid) {
+        io.to(gameId).emit('tileRevealed', {
+          x: move.x, 
+          y: move.y,
+          grid: currentGame.grid,
+          nextTurn: currentGame.currentTurn,
+          playerStats: currentGame.playerStats,
+          hitMine: result.hitMine
+        })
+        
+        // Bot sends a reaction occasionally
+        if (Math.random() < 0.3) {
+          const reactions = ['🤖', '🎯', '💭', '⚡', '🔍']
+          const reaction = reactions[Math.floor(Math.random() * reactions.length)]
+          
+          setTimeout(() => {
+            io.to(gameId).emit('avatarReaction', {
+              playerId: 'bot-player-ai',
+              reaction: reaction,
+              timestamp: Date.now()
+            })
+          }, 500)
+        }
+        
+        if (result.gameEnded) {
+          console.log(`Game ${gameId} ended. Winner: ${currentGame.winner}`)
+          io.to(gameId).emit('gameEnded', {
+            winner: currentGame.winner,
+            finalStats: currentGame.playerStats,
+            reason: result.hitMine ? 'mine' : 'completion'
+          })
+          
+          // Clean up
+          setTimeout(() => {
+            games.delete(gameId)
+          }, 30000)
+        } else {
+          // Schedule next bot move if it's still bot's turn
+          if (currentGame.currentTurn === 'bot-player-ai') {
+            scheduleBotMove(gameId)
+          }
+        }
+      }
+    }
+  }, thinkTime)
 }
 
 // Reveal tile and check game state
@@ -151,42 +249,75 @@ io.on('connection', (socket) => {
     const player = { socketId: socket.id, publicKey: publicKey || `test-player-${socket.id}` }
     playerSockets.set(socket.id, player)
     
-    // Add to appropriate waiting list
-    const waitingList = isTestMode ? testWaitingPlayers : waitingPlayers
-    waitingList.push({ ...player, stakeAmount: stakeAmount || 0, isTestMode })
-    
-    console.log(`Player ${player.publicKey} joined ${isTestMode ? 'test' : 'real'} game queue`)
-    
-    // Try to match players from the same mode
-    if (waitingList.length >= 2) {
-      const player1 = waitingList.shift()
-      const player2 = waitingList.shift()
+    if (isTestMode) {
+      // In test mode, immediately pair with bot
+      const humanPlayer = { ...player, stakeAmount: 0, isTestMode: true }
+      const botPlayer = { ...BOT_PLAYER }
       
-      // Create new game
-      const game = createGame(player1, player2, Math.max(player1.stakeAmount, player2.stakeAmount), isTestMode)
+      // Create new game with bot
+      const game = createGame(humanPlayer, botPlayer, 0, true)
       
-      // Join both players to game room
-      io.sockets.sockets.get(player1.socketId)?.join(game.id)
-      io.sockets.sockets.get(player2.socketId)?.join(game.id)
+      // Join human player to game room
+      socket.join(game.id)
       
-      console.log(`Game ${game.id} created with players ${player1.publicKey} and ${player2.publicKey}`)
+      console.log(`Test game ${game.id} created with player ${humanPlayer.publicKey} vs Bot`)
       
-      // Notify players
-      io.to(game.id).emit('gameJoined', {
+      // Notify player
+      socket.emit('gameJoined', {
         gameId: game.id,
         players: game.players,
         stakeAmount: game.stakeAmount,
         isTestMode: game.isTestMode
       })
       
-      io.to(game.id).emit('gameStarted', {
+      socket.emit('gameStarted', {
         gameId: game.id,
         currentTurn: game.currentTurn,
         grid: game.grid,
         seed: game.seed
       })
+      
+      // If bot goes first, schedule its move
+      if (game.currentTurn === 'bot-player-ai') {
+        scheduleBotMove(game.id)
+      }
     } else {
-      socket.emit('waitingForOpponent')
+      // Real game mode - add to waiting list
+      waitingPlayers.push({ ...player, stakeAmount: stakeAmount || 0, isTestMode: false })
+      
+      console.log(`Player ${player.publicKey} joined real game queue`)
+      
+      // Try to match players
+      if (waitingPlayers.length >= 2) {
+        const player1 = waitingPlayers.shift()
+        const player2 = waitingPlayers.shift()
+        
+        // Create new game
+        const game = createGame(player1, player2, Math.max(player1.stakeAmount, player2.stakeAmount), false)
+        
+        // Join both players to game room
+        io.sockets.sockets.get(player1.socketId)?.join(game.id)
+        io.sockets.sockets.get(player2.socketId)?.join(game.id)
+        
+        console.log(`Game ${game.id} created with players ${player1.publicKey} and ${player2.publicKey}`)
+        
+        // Notify players
+        io.to(game.id).emit('gameJoined', {
+          gameId: game.id,
+          players: game.players,
+          stakeAmount: game.stakeAmount,
+          isTestMode: game.isTestMode
+        })
+        
+        io.to(game.id).emit('gameStarted', {
+          gameId: game.id,
+          currentTurn: game.currentTurn,
+          grid: game.grid,
+          seed: game.seed
+        })
+      } else {
+        socket.emit('waitingForOpponent')
+      }
     }
   })
 
@@ -220,7 +351,12 @@ io.on('connection', (socket) => {
         // Clean up
         setTimeout(() => {
           games.delete(gameId)
-        }, 30000) // Keep game state for 30 seconds
+        }, 30000)
+      } else {
+        // If it's now bot's turn, schedule bot move
+        if (game.hasBot && game.currentTurn === 'bot-player-ai') {
+          scheduleBotMove(gameId)
+        }
       }
     }
   })
@@ -238,16 +374,35 @@ io.on('connection', (socket) => {
       
       game.chatMessages.push(chatMessage)
       
-      // Broadcast to both players with ownership info
-      game.players.forEach(p => {
-        const targetSocket = io.sockets.sockets.get(p.socketId)
-        if (targetSocket) {
-          targetSocket.emit('chatMessage', {
-            ...chatMessage,
-            isOwn: p.publicKey === player.publicKey
-          })
-        }
+      // Broadcast to human player with ownership info
+      socket.emit('chatMessage', {
+        ...chatMessage,
+        isOwn: true
       })
+      
+      // Bot occasionally responds to chat
+      if (game.hasBot && Math.random() < 0.4) {
+        const botResponses = [
+          '🤖 Beep boop!',
+          '🎯 Good move!',
+          '💭 Calculating...',
+          '⚡ Nice try!',
+          '🔍 Interesting choice',
+          '🎮 Let\'s play!',
+          '🚀 Game on!'
+        ]
+        
+        setTimeout(() => {
+          const botMessage = {
+            playerId: 'bot-player-ai',
+            message: botResponses[Math.floor(Math.random() * botResponses.length)],
+            timestamp: Date.now(),
+            isOwn: false
+          }
+          
+          socket.emit('chatMessage', botMessage)
+        }, 1000 + Math.random() * 2000)
+      }
     }
   })
 
@@ -273,11 +428,6 @@ io.on('connection', (socket) => {
       waitingPlayers.splice(waitingIndex, 1)
     }
     
-    const testWaitingIndex = testWaitingPlayers.findIndex(p => p.socketId === socket.id)
-    if (testWaitingIndex !== -1) {
-      testWaitingPlayers.splice(testWaitingIndex, 1)
-    }
-    
     // Handle game disconnection
     const player = playerSockets.get(socket.id)
     if (player) {
@@ -285,16 +435,19 @@ io.on('connection', (socket) => {
       for (const [gameId, game] of games.entries()) {
         if (game.players.some(p => p.socketId === socket.id)) {
           if (game.status === 'playing') {
-            // Other player wins by forfeit
+            // Other player wins by forfeit (or bot wins if it's a test game)
             const otherPlayer = game.players.find(p => p.socketId !== socket.id)
             game.winner = otherPlayer.publicKey
             game.status = 'finished'
             
-            socket.to(gameId).emit('gameEnded', {
-              winner: game.winner,
-              finalStats: game.playerStats,
-              reason: 'forfeit'
-            })
+            // Only emit to real players, not bots
+            if (otherPlayer.socketId !== 'bot-player') {
+              socket.to(gameId).emit('gameEnded', {
+                winner: game.winner,
+                finalStats: game.playerStats,
+                reason: 'forfeit'
+              })
+            }
           }
           break
         }
@@ -309,7 +462,7 @@ const PORT = process.env.PORT || 3001
 server.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`)
   console.log(`Real game waiting players: ${waitingPlayers.length}`)
-  console.log(`Test game waiting players: ${testWaitingPlayers.length}`)
+  console.log(`Bot AI enabled for test mode`)
 })
 
 // Health check endpoint
@@ -318,7 +471,7 @@ app.get('/health', (req, res) => {
     status: 'ok', 
     games: games.size, 
     waitingPlayers: waitingPlayers.length,
-    testWaitingPlayers: testWaitingPlayers.length,
+    botEnabled: true,
     timestamp: new Date().toISOString()
   })
 })
