@@ -1,0 +1,170 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  font-family: Inter, system-ui, Avenir, Helvetica, Arial, sans-serif;
+  line-height: 1.5;
+  font-weight: 400;
+}
+
+@keyframes bounceIn {
+  0% { transform: scale(0.3) rotate(0deg); opacity: 0; }
+  50% { transform: scale(1.1) rotate(180deg); }
+  100% { transform: scale(1) rotate(360deg); opacity: 1; }
+}
+
+@keyframes shake {
+  0%, 100% { transform: translateX(0); }
+  10%, 30%, 50%, 70%, 90% { transform: translateX(-10px); }
+  20%, 40%, 60%, 80% { transform: translateX(10px); }
+}
+
+@keyframes pulseGlow {
+  0%, 100% { box-shadow: 0 0 10px rgba(59, 130, 246, 0.5); }
+  50% { box-shadow: 0 0 20px rgba(59, 130, 246, 0.8); }
+}
+
+.game-grid {
+  display: grid;
+  grid-template-columns: repeat(10, 1fr);
+  gap: 1px;
+  background: linear-gradient(135deg, #1f2937 0%, #111827 100%);
+  padding: 4px;
+  border-radius: 8px;
+  width: 100%;
+  max-width: 400px;
+}
+
+@media (min-width: 640px) {
+  .game-grid {
+    gap: 2px;
+    padding: 8px;
+    max-width: 500px;
+  }
+}
+
+@media (min-width: 1024px) {
+  .game-grid {
+    max-width: 600px;
+  }
+}
+
+.tile {
+  aspect-ratio: 1;
+  background: linear-gradient(135deg, #374151 0%, #1f2937 100%);
+  border: 1px solid #4b5563;
+  border-radius: 2px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: bold;
+  font-size: 0.6rem;
+  position: relative;
+}
+
+@media (min-width: 640px) {
+  .tile {
+    border: 2px solid #4b5563;
+    border-radius: 4px;
+    font-size: 0.75rem;
+  }
+}
+
+@media (min-width: 1024px) {
+  .tile {
+    font-size: 0.875rem;
+  }
+}
+
+.tile:hover:not(.disabled):not(.revealed) {
+  border-color: #3b82f6;
+  transform: scale(1.05);
+}
+
+.tile.revealed {
+  background: linear-gradient(135deg, #065f46 0%, #064e3b 100%);
+  border-color: #10b981;
+  cursor: default;
+  color: #10b981;
+}
+
+.tile.mine {
+  background: linear-gradient(135deg, #991b1b 0%, #7f1d1d 100%);
+  border-color: #ef4444;
+  color: #ef4444;
+}
+
+.tile.disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.avatar-reaction {
+  position: absolute;
+  top: -15px;
+  right: -15px;
+  font-size: 1.5rem;
+  animation: bounceIn 0.5s ease-out;
+  z-index: 10;
+}
+
+@media (min-width: 640px) {
+  .avatar-reaction {
+    top: -20px;
+    right: -20px;
+    font-size: 2rem;
+  }
+}
+
+body {
+  margin: 0;
+  background: linear-gradient(135deg, #111827 0%, #1f2937 100%);
+  color: #f9fafb;
+  min-height: 100vh;
+}
+
+.btn-primary {
+  @apply bg-primary-500 hover:bg-primary-600 text-white font-medium py-2 px-4 rounded-lg transition-colors duration-200;
+}
+
+.btn-danger {
+  @apply bg-danger-500 hover:bg-danger-600 text-white font-medium py-2 px-4 rounded-lg transition-colors duration-200;
+}
+
+.btn-success {
+  @apply bg-success-500 hover:bg-success-600 text-white font-medium py-2 px-4 rounded-lg transition-colors duration-200;
+}
+
+/* Wallet adapter responsive fixes */
+.wallet-adapter-button {
+  font-size: 14px !important;
+  padding: 8px 16px !important;
+}
+
+@media (max-width: 640px) {
+  .wallet-adapter-button {
+    font-size: 12px !important;
+    padding: 6px 12px !important;
+  }
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: #1f2937;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #4b5563;
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #6b7280;
+}

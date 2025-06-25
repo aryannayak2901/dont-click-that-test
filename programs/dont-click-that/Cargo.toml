@@ -1,0 +1,19 @@
+[package]
+name = "dont-click-that"
+version = "0.1.0"
+description = "Don't Click That! - 1v1 on-chain Minesweeper game"
+edition = "2021"
+
+[lib]
+crate-type = ["cdylib", "lib"]
+name = "dont_click_that"
+
+[dependencies]
+anchor-lang = "0.28.0"
+anchor-spl = "0.28.0"
+
+[features]
+no-entrypoint = []
+no-idl = []
+cpi = ["no-entrypoint"]
+default = []
