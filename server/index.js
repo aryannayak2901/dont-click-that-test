@@ -8,12 +8,15 @@ const app = express()
 const server = createServer(app)
 const io = new Server(server, {
   cors: {
-    origin: ["http://localhost:5173", "http://localhost:3000", "https://localhost:5173"],
+    origin: "*",
     methods: ["GET", "POST"]
   }
 })
 
-app.use(cors())
+app.use(cors({
+  origin: '*',
+  methods: ['GET', 'POST']
+}))
 app.use(express.json())
 
 // Game state management
@@ -105,6 +108,21 @@ function createGame(player1, player2, stakeAmount, isTestMode = false) {
   }
   
   games.set(gameId, game)
+  
+  // If playing against a bot, we need to announce the game start to the player
+  if (game.hasBot) {
+    console.log(`Bot game ${gameId} created - emitting gameStarted to player ${player1.socketId}`)
+    io.to(player1.socketId).emit('gameStarted', {
+      currentTurn: game.currentTurn,
+      grid: game.grid
+    })
+    
+    // Schedule bot move if it's bot's turn to start
+    if (game.currentTurn === 'bot-player-ai') {
+      scheduleBotMove(gameId)
+    }
+  }
+  
   return game
 }
 
@@ -146,14 +164,25 @@ function getBotMove(game) {
 // Execute bot move with delay
 function scheduleBotMove(gameId) {
   const game = games.get(gameId)
-  if (!game || game.status !== 'playing' || game.currentTurn !== 'bot-player-ai') {
+  if (!game) {
+    console.log(`Cannot schedule bot move: game ${gameId} not found`)
+    return
+  }
+  
+  if (game.status !== 'playing') {
+    console.log(`Cannot schedule bot move: game ${gameId} not in playing state (${game.status})`)
+    return
+  }
+  
+  if (game.currentTurn !== 'bot-player-ai') {
+    console.log(`Cannot schedule bot move: not bot's turn (current turn: ${game.currentTurn})`)
     return
   }
   
   console.log(`Bot scheduling move for game ${gameId}`)
   
-  // Bot thinks for 1-3 seconds
-  const thinkTime = 1000 + Math.random() * 2000
+  // Bot thinks for 1-2 seconds (making it faster for better UX)
+  const thinkTime = 1000 + Math.random() * 1000
   
   setTimeout(() => {
     const currentGame = games.get(gameId)
@@ -259,11 +288,14 @@ function revealTile(game, x, y, playerPublicKey) {
 }
 
 io.on('connection', (socket) => {
-  console.log('Player connected:', socket.id)
+  console.log('Player connected with socket ID:', socket.id)
+  console.log('Client headers:', socket.handshake.headers)
+  console.log('Client query params:', socket.handshake.query)
 
   socket.on('joinGame', ({ stakeAmount, publicKey, isTestMode = false }) => {
-    const player = { socketId: socket.id, publicKey: publicKey || `test-player-${socket.id}` }
+    const player = { socketId: socket.id, publicKey: publicKey || `test-player-${Date.now()}` }
     playerSockets.set(socket.id, player)
+    console.log(`Player joined: ${player.publicKey}, isTestMode: ${isTestMode}`)
     
     if (isTestMode) {
       console.log(`Creating test game for player ${player.publicKey}`)
@@ -272,37 +304,38 @@ io.on('connection', (socket) => {
       const humanPlayer = { ...player, stakeAmount: 0, isTestMode: true }
       const botPlayer = { ...BOT_PLAYER }
       
-      // Create new game with bot
+      // Create new game with bot - ALWAYS make human player go first for better UX
       const game = createGame(humanPlayer, botPlayer, 0, true)
+      
+      // Force human player to go first in bot games
+      game.currentTurn = humanPlayer.publicKey
       
       // Join human player to game room
       socket.join(game.id)
       
       console.log(`Test game ${game.id} created with player ${humanPlayer.publicKey} vs Bot`)
+      console.log(`Current turn set to human player: ${game.currentTurn}`)
       
       // Notify player immediately
       socket.emit('gameJoined', {
         gameId: game.id,
-        players: game.players,
-        stakeAmount: game.stakeAmount,
-        isTestMode: game.isTestMode
+        players: [
+          { publicKey: humanPlayer.publicKey, isBot: false },
+          { publicKey: 'bot-player-ai', isBot: true }
+        ],
+        stakeAmount: 0,
+        isTestMode: true
       })
       
       // Start game immediately
-      setTimeout(() => {
-        socket.emit('gameStarted', {
-          gameId: game.id,
-          currentTurn: game.currentTurn,
-          grid: game.grid,
-          seed: game.seed
-        })
-        
-        // If bot goes first, schedule its move
-        if (game.currentTurn === 'bot-player-ai') {
-          console.log('Bot goes first, scheduling move')
-          scheduleBotMove(game.id)
-        }
-      }, 100)
+      socket.emit('gameStarted', {
+        gameId: game.id,
+        currentTurn: game.currentTurn,
+        grid: game.grid,
+        seed: game.seed
+      })
+      
+      // We don't need to schedule bot move here since human always goes first now
       
     } else {
       // Real game mode - add to waiting list
@@ -348,6 +381,15 @@ io.on('connection', (socket) => {
     const game = games.get(gameId)
     const player = playerSockets.get(socket.id)
     
+    // Debug log for every tile reveal attempt
+    console.log(`Tile reveal attempt: gameId=${gameId}, x=${x}, y=${y}`)
+    console.log(`Game exists: ${!!game}, Player exists: ${!!player}`)
+    if (game) {
+      console.log(`Game currentTurn: ${game.currentTurn}, Player publicKey: ${player?.publicKey}`)
+      console.log(`Game status: ${game.status}, hasBot: ${game.hasBot}`)
+      console.log(`All players in game:`, game.players.map(p => p.publicKey))
+    }
+    
     if (!game || !player || game.currentTurn !== player.publicKey || game.status !== 'playing') {
       console.log(`Invalid tile reveal attempt: game=${!!game}, player=${!!player}, turn=${game?.currentTurn}, playerKey=${player?.publicKey}`)
       return
@@ -381,7 +423,10 @@ io.on('connection', (socket) => {
         // If it's now bot's turn, schedule bot move
         if (game.hasBot && game.currentTurn === 'bot-player-ai') {
           console.log('Scheduling bot move after player turn')
-          scheduleBotMove(gameId)
+          // Use a very short delay to ensure client gets the turn update first
+          setTimeout(() => {
+            scheduleBotMove(gameId)
+          }, 500)
         }
       }
     }
@@ -494,9 +539,13 @@ io.on('connection', (socket) => {
 
 const PORT = process.env.PORT || 3001
 server.listen(PORT, () => {
+  console.log(`=====================================`)
   console.log(`Server running on port ${PORT}`)
+  console.log(`Socket.IO ready for connections`)
+  console.log(`CORS configured to accept all origins`)
   console.log(`Real game waiting players: ${waitingPlayers.length}`)
   console.log(`Bot AI enabled for test mode`)
+  console.log(`=====================================`)
 })
 
 // Health check endpoint
@@ -508,6 +557,12 @@ app.get('/health', (req, res) => {
     botEnabled: true,
     timestamp: new Date().toISOString()
   })
+})
+
+// Simple ping endpoint for connectivity testing
+app.get('/ping', (req, res) => {
+  console.log('Ping received from', req.ip)
+  res.send('pong')
 })
 
 export default app

@@ -18,14 +18,37 @@ export function GameProvider({ children }) {
     chatMessages: [],
     stakeAmount: 0,
     isTestMode: false,
+    socketConnected: false,
   })
 
   useEffect(() => {
-    const newSocket = io(import.meta.env.VITE_SERVER_URL || 'http://localhost:3001')
+    console.log('Initializing socket connection to:', import.meta.env.VITE_SERVER_URL || 'http://localhost:3001')
+    const newSocket = io(import.meta.env.VITE_SERVER_URL || 'http://localhost:3001', {
+      transports: ['websocket', 'polling'],
+      reconnection: true,
+      reconnectionAttempts: 5,
+      reconnectionDelay: 1000,
+    })
+    
+    newSocket.on('connect', () => {
+      console.log('Socket.IO connected successfully with ID:', newSocket.id)
+      setGameState(prev => ({ ...prev, socketConnected: true }))
+    })
+    
+    newSocket.on('connect_error', (err) => {
+      console.error('Socket.IO connection error:', err)
+    })
+    
+    newSocket.on('disconnect', (reason) => {
+      console.log('Socket.IO disconnected:', reason)
+      setGameState(prev => ({ ...prev, socketConnected: false }))
+    })
+    
     setSocket(newSocket)
 
     // Socket event listeners
     newSocket.on('gameJoined', (data) => {
+      console.log('Game joined event received:', data)
       setGameState(prev => ({
         ...prev,
         gameId: data.gameId,
@@ -36,6 +59,7 @@ export function GameProvider({ children }) {
     })
 
     newSocket.on('gameStarted', (data) => {
+      console.log('Game started event received:', data)
       setGameState(prev => ({
         ...prev,
         gameStatus: 'playing',
@@ -45,6 +69,7 @@ export function GameProvider({ children }) {
     })
 
     newSocket.on('tileRevealed', (data) => {
+      console.log('Tile revealed event received:', data)
       setGameState(prev => ({
         ...prev,
         grid: data.grid,
@@ -89,17 +114,27 @@ export function GameProvider({ children }) {
   const joinGame = (stakeAmount, isTestMode = false) => {
     if (socket) {
       const playerKey = publicKey?.toString() || `test-player-${Date.now()}`
+      console.log(`Joining game with params:`, {
+        stakeAmount, 
+        publicKey: playerKey,
+        isTestMode
+      })
       socket.emit('joinGame', { 
         stakeAmount, 
         publicKey: playerKey,
         isTestMode 
       })
+    } else {
+      console.error('Cannot join game: Socket not initialized')
     }
   }
 
   const revealTile = (x, y) => {
     if (socket && gameState.gameId) {
+      console.log('Emitting revealTile event:', { gameId: gameState.gameId, x, y })
       socket.emit('revealTile', { gameId: gameState.gameId, x, y })
+    } else {
+      console.error('Cannot reveal tile - socket or gameId missing', { socket: !!socket, gameId: gameState.gameId })
     }
   }
 

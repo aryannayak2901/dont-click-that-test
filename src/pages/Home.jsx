@@ -19,7 +19,8 @@ export default function Home() {
 
     setIsJoining(true)
     try {
-      await joinGame(isTestMode ? 0 : stakeAmount, isTestMode)
+      console.log(`Starting game with isTestMode=${isTestMode}, stake=${isTestMode ? 0 : stakeAmount}`)
+      joinGame(isTestMode ? 0 : stakeAmount, isTestMode)
       navigate('/game')
     } catch (error) {
       console.error('Failed to join game:', error)

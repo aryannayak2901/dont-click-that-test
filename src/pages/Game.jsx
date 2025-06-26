@@ -23,11 +23,24 @@ export default function Game() {
   }, [gameState.gameStatus])
 
   const handleTileClick = (x, y) => {
-    if (gameState.gameStatus !== 'playing') return
+    if (gameState.gameStatus !== 'playing') {
+      console.log('Game not in playing state')
+      return
+    }
     
-    const playerKey = publicKey?.toString() || `test-player-${Date.now()}`
-    if (gameState.currentTurn !== playerKey) return
+    // For test mode games, always use the first player (human player)
+    const playerKey = gameState.isTestMode 
+      ? gameState.players[0]?.publicKey 
+      : (publicKey?.toString() || gameState.players[0]?.publicKey)
+      
+    console.log('Current turn:', gameState.currentTurn, 'Player key:', playerKey)
     
+    if (gameState.currentTurn !== playerKey) {
+      console.log('Not your turn')
+      return
+    }
+    
+    console.log('Revealing tile:', x, y)
     setSelectedTile({ x, y })
     revealTile(x, y)
   }
@@ -36,10 +49,27 @@ export default function Game() {
     navigate('/')
   }
 
-  const playerKey = publicKey?.toString() || `test-player-${Date.now()}`
-  const currentPlayer = gameState.players.find(p => p.publicKey === playerKey)
-  const opponent = gameState.players.find(p => p.publicKey !== playerKey)
-  const isMyTurn = gameState.currentTurn === playerKey
+  const playerKey = publicKey?.toString() || gameState.players[0]?.publicKey
+  const currentPlayer = gameState.players.find(p => p.publicKey === playerKey || (!p.isBot && p.publicKey))
+  const opponent = gameState.players.find(p => p.publicKey !== currentPlayer?.publicKey)
+  const isMyTurn = gameState.currentTurn === currentPlayer?.publicKey
+  
+  // Extra debug for turn issues
+  useEffect(() => {
+    console.log('Current game state (Game.jsx):', {
+      currentPlayer: currentPlayer?.publicKey,
+      opponentPlayer: opponent?.publicKey,
+      currentTurn: gameState.currentTurn,
+      isMyTurn,
+      allPlayers: gameState.players.map(p => p.publicKey),
+      playerKey
+    })
+  }, [gameState.currentTurn, currentPlayer, opponent, playerKey])
+
+  // Debug output
+  useEffect(() => {
+    console.log('Current game state:', gameState)
+  }, [gameState])
 
   if (gameState.gameStatus === 'waiting') {
     return (
@@ -55,6 +85,9 @@ export default function Game() {
           ) : (
             <p className="text-gray-400">Stake: {gameState.stakeAmount} GORBA</p>
           )}
+          <p className="text-xs text-gray-500 mt-2">
+            Socket status: {gameState.socketConnected ? 'Connected ✅' : 'Connecting...'}
+          </p>
           <button
             onClick={handleBackHome}
             className="mt-4 text-gray-400 hover:text-white transition-colors text-sm"
